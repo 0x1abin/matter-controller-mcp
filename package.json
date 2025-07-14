@@ -1,0 +1,64 @@
+{
+  "name": "matter-controller-mcp",
+  "version": "0.0.1",
+  "description": "A powerful Model Context Protocol (MCP) server for Matter device control and management",
+  "license": "MIT",
+  "author": {
+    "name": "0x1abin",
+    "url": "https://github.com/0x1abin"
+  },
+  "homepage": "https://github.com/0x1abin/matter-controller-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/0x1abin/matter-controller-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/0x1abin/matter-controller-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "matter",
+    "smart-home",
+    "iot",
+    "device-control",
+    "home-automation",
+    "matter-js",
+    "thread",
+    "zigbee"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "bin": {
+    "mcp-server-matterController": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc && shx cp instructions.md dist/ && shx chmod +x dist/*.js",
+    "prepare": "npm run build",
+    "watch": "tsc --watch",
+    "start": "node dist/index.js",
+    "start:sse": "node dist/sse.js",
+    "start:streamableHttp": "node dist/streamableHttp.js"
+  },
+  "dependencies": {
+    "@matter/main": "^0.15.1",
+    "@matter/nodejs-ble": "^0.15.1",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@project-chip/matter.js": "^0.15.1",
+    "express": "^4.21.1",
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.23.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "shx": "^0.3.4",
+    "typescript": "^5.6.2"
+  }
+}
