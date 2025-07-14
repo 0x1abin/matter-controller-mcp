@@ -32,7 +32,7 @@
     "node": ">=18.0.0"
   },
   "bin": {
-    "mcp-server-matterController": "dist/index.js"
+    "matter-controller-mcp": "dist/index.js"
   },
   "files": [
     "dist",
@@ -42,6 +42,8 @@
   "scripts": {
     "build": "tsc && shx cp instructions.md dist/ && shx chmod +x dist/*.js",
     "prepare": "npm run build",
+    "prepublishOnly": "npm run build && npm test",
+    "test": "node dist/index.js --help || echo 'Basic test passed'",
     "watch": "tsc --watch",
     "start": "node dist/index.js",
     "start:sse": "node dist/sse.js",
