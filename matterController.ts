@@ -628,7 +628,7 @@ async function handleGetDeviceInfo(args: any) {
             content: [
                 {
                     type: 'text',
-                    text: `Device ${nodeIdString} detailed information:\n${JSON.stringify(processedDeviceInfo, null, 2)}`
+                    text: `Device ${nodeIdString} detailed information:\n${JSON.stringify(processedDeviceInfo, null)}`
                 }
             ]
         };
