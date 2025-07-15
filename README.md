@@ -24,6 +24,17 @@ A powerful Model Context Protocol (MCP) server that provides comprehensive Matte
 - **Sensors**: Various sensor types (temperature, humidity, etc.)
 - **And more**: Any Matter-compatible device
 
+## Architecture
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   MCP Client    │◄──►│  MCP Server      │◄──►│  Matter Network │
+│  (AI Assistant) │    │  (This Project)  │    │    (Devices)    │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+```
+
+The server acts as a bridge between MCP clients and Matter devices, providing a standardized interface for device control and monitoring.
+
 ## Installation
 
 ### NPM Package
@@ -65,6 +76,19 @@ matter-controller-mcp sse
 npx matter-controller-mcp streamableHttp
 # or
 matter-controller-mcp streamableHttp
+```
+
+### Cursor MCP Server
+
+```json
+{
+  "mcpServers": {
+    "matter-controller": {
+      "command": "npx",
+      "args": ["-y", "matter-controller-mcp", "stdio"]
+    }
+  }
+}
 ```
 
 ## Configuration
@@ -214,16 +238,6 @@ npm run start:streamableHttp # Start with streamable HTTP transport
 
 The server automatically initializes and connects to commissioned devices on startup. You can test device control using any MCP-compatible client.
 
-## Architecture
-
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   MCP Client    │◄──►│  MCP Server      │◄──►│  Matter Network │
-│  (AI Assistant) │    │  (This Project)  │    │    (Devices)    │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
-
-The server acts as a bridge between MCP clients and Matter devices, providing a standardized interface for device control and monitoring.
 
 ## Contributing
 
@@ -264,23 +278,13 @@ export MATTER_LOG_LEVEL="debug"
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Author
-
-**0x1abin**
-- GitHub: [@0x1abin](https://github.com/0x1abin)
-- Issues: [GitHub Issues](https://github.com/0x1abin/matter-controller-mcp/issues)
 
 ## Acknowledgments
 
-- [Matter.js](https://github.com/project-chip/matter.js) - The core Matter protocol implementation
-- [Model Context Protocol](https://modelcontextprotocol.io/) - The protocol specification
 - [Project CHIP](https://github.com/project-chip) - The Matter standard
-
-## Related Projects
-
-- [MCP SDK](https://github.com/modelcontextprotocol/sdk) - Official MCP SDK
-- [Matter.js](https://github.com/project-chip/matter.js) - JavaScript Matter implementation
-- [Claude Desktop](https://claude.ai/) - AI assistant supporting MCP
+- [Matter.js](https://github.com/project-chip/matter.js) - The core Matter protocol implementation
+- [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk) - The MCP Typescript SDK
+- [Model Context Protocol](https://modelcontextprotocol.io/) - The protocol specification
 
 ---
 
