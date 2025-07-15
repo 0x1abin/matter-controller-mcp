@@ -111,7 +111,6 @@ let logger: Logger;
 let environment: Environment;
 let storageService: StorageService;
 let commissioningController: CommissioningController | null = null;
-let connectedNodes: Map<string, any> = new Map();
 let deviceSubscriptions: Map<string, any> = new Map();
 let controllerUniqueId: string = '';
 let adminFabricLabel: string = '';
@@ -210,17 +209,22 @@ async function autoConnectDevices() {
         const nodes = commissioningController.getCommissionedNodes();
         logger.info(`Auto-connecting ${nodes.length} commissioned devices...`);
         
+        let connectedCount = 0;
+        
         for (const nodeId of nodes) {
             try {
-                // Skip if already connected
                 const nodeIdString = NodeIdUtils.nodeIdToString(nodeId);
-                if (connectedNodes.has(nodeIdString)) {
+                
+                // Get the node and check if it's already connected
+                const node = await commissioningController.getNode(nodeId);
+                
+                if (node.isConnected) {
                     logger.info(`Device ${nodeIdString} already connected, skipping`);
+                    connectedCount++;
                     continue;
                 }
                 
                 logger.info(`Auto-connecting to device ${nodeIdString}...`);
-                const node = await commissioningController.getNode(nodeId);
                 
                 // Setup event handlers
                 node.events.attributeChanged.on(({ path: { nodeId, clusterId, endpointId, attributeName }, value }: any) => {
@@ -241,8 +245,8 @@ async function autoConnectDevices() {
                     await node.events.initialized;
                 }
                 
-                connectedNodes.set(nodeIdString, node);
                 logger.info(`Successfully connected to device ${nodeIdString}`);
+                connectedCount++;
                 
                 // Auto-subscribe to events
                 node.events.attributeChanged.on(({ path: { nodeId, clusterId, endpointId, attributeName }, value }: any) => {
@@ -261,7 +265,7 @@ async function autoConnectDevices() {
             }
         }
         
-        logger.info(`Auto-connected ${connectedNodes.size} devices successfully`);
+        logger.info(`Auto-connected ${connectedCount} devices successfully`);
     } catch (error) {
         logger.error('Failed to auto-connect devices:', error);
     }
@@ -339,18 +343,20 @@ async function ensureDeviceConnected(nodeIdInput: string): Promise<any> {
     // Normalize the nodeId to string format
     const nodeIdString = NodeIdUtils.validateAndNormalizeNodeId(nodeIdInput);
     
-    if (connectedNodes.has(nodeIdString)) {
-        return connectedNodes.get(nodeIdString);
-    }
-    
     if (!commissioningController) {
         throw new McpError(ErrorCode.InvalidRequest, "Controller not initialized");
     }
     
     try {
-        logger.info(`Device ${nodeIdString} not connected, connecting now...`);
         const nodeId = NodeIdUtils.parseNodeId(nodeIdString);
         const node = await commissioningController.getNode(nodeId);
+        
+        // Check if device is already connected
+        if (node.isConnected) {
+            return node;
+        }
+        
+        logger.info(`Device ${nodeIdString} not connected, connecting now...`);
         
         // Setup event handlers
         node.events.attributeChanged.on(({ path: { nodeId, clusterId, endpointId, attributeName }, value }: any) => {
@@ -371,8 +377,6 @@ async function ensureDeviceConnected(nodeIdInput: string): Promise<any> {
             await node.events.initialized;
         }
         
-        // Store the connection
-        connectedNodes.set(nodeIdString, node);
         logger.info(`Successfully connected to device ${nodeIdString}`);
         
         return node;
@@ -386,6 +390,22 @@ async function ensureDeviceConnected(nodeIdInput: string): Promise<any> {
 async function handleGetControllerStatus(args: any) {
     const validatedArgs = GetControllerStatusSchema.parse(args);
     
+    // Count connected devices using matter.js API
+    let connectedDevicesCount = 0;
+    if (commissioningController) {
+        const nodes = commissioningController.getCommissionedNodes();
+        for (const nodeId of nodes) {
+            try {
+                const node = await commissioningController.getNode(nodeId);
+                if (node.isConnected) {
+                    connectedDevicesCount++;
+                }
+            } catch (error) {
+                // Skip counting if node cannot be accessed
+            }
+        }
+    }
+    
     return {
         content: [
             {
@@ -396,7 +416,8 @@ async function handleGetControllerStatus(args: any) {
                     uniqueId: controllerUniqueId || 'not set',
                     adminFabricLabel: adminFabricLabel || 'not set',
                     commissioning: commissioningController !== null,
-                    connectedDevices: connectedNodes.size,
+                    commissionedDevices: commissioningController?.getCommissionedNodes().length || 0,
+                    connectedDevices: connectedDevicesCount,
                     subscribedDevices: deviceSubscriptions.size
                 }, null, 2)
             }
@@ -485,11 +506,24 @@ async function handleGetCommissionedDevices(args: any) {
         );
         
         // Add connection status to the details
-        const connectionStatus = serializedNodes.map(nodeId => ({
-            nodeId,
-            connected: connectedNodes.has(nodeId),
-            subscribed: deviceSubscriptions.has(nodeId)
-        }));
+        const connectionStatus: any[] = [];
+        for (const nodeId of serializedNodes) {
+            try {
+                const node = await commissioningController.getNode(NodeIdUtils.parseNodeId(nodeId));
+                connectionStatus.push({
+                    nodeId,
+                    connected: node.isConnected,
+                    subscribed: deviceSubscriptions.has(nodeId)
+                });
+            } catch (error) {
+                connectionStatus.push({
+                    nodeId,
+                    connected: false,
+                    subscribed: deviceSubscriptions.has(nodeId),
+                    error: `Failed to get node status: ${error}`
+                });
+            }
+        }
 
         // Convert any BigInt values to strings for JSON serialization
         const processedDetails = JSON.parse(JSON.stringify(serializedDetails, (key, value) => {
@@ -863,17 +897,12 @@ async function handleDecommissionDevice(args: any) {
         
         // Ensure the device is connected before attempting to remove it
         let node: any = null;
-        if (connectedNodes.has(nodeIdString)) {
-            node = connectedNodes.get(nodeIdString);
-        } else {
-            // If not connected, try to connect first
-            try {
-                logger.info(`Connecting to device ${nodeIdString} for decommissioning...`);
-                node = await ensureDeviceConnected(nodeIdString);
-            } catch (error) {
-                logger.warn(`Failed to connect to device ${nodeIdString} for decommissioning: ${error}`);
-                // Continue with removal even if connection fails
-            }
+        try {
+            logger.info(`Connecting to device ${nodeIdString} for decommissioning...`);
+            node = await ensureDeviceConnected(nodeIdString);
+        } catch (error) {
+            logger.warn(`Failed to connect to device ${nodeIdString} for decommissioning: ${error}`);
+            // Continue with removal even if connection fails
         }
         
         // Remove the node from the commissioned nodes while connected
@@ -898,7 +927,6 @@ async function handleDecommissionDevice(args: any) {
         }
         
         // Clean up our local state
-        connectedNodes.delete(nodeIdString);
         deviceSubscriptions.delete(nodeIdString);
 
         return {
@@ -1207,19 +1235,22 @@ export const createServer = () => {
         logger.info('Cleaning up Matter Controller MCP server...');
         
         // Close all connections
-        for (const [nodeId, node] of connectedNodes) {
-            try {
-                if (node.isConnected) {
-                    await node.disconnect();
-                }
-            } catch (error) {
-                logger.error(`Error disconnecting from node ${nodeId}:`, error);
-            }
-        }
-
-        // Close the commissioning controller
         if (commissioningController) {
             try {
+                // First disconnect all nodes
+                const nodes = commissioningController.getCommissionedNodes();
+                for (const nodeId of nodes) {
+                    try {
+                        const node = await commissioningController.getNode(nodeId);
+                        if (node.isConnected) {
+                            await node.disconnect();
+                        }
+                    } catch (error) {
+                        logger.error(`Error disconnecting from node ${nodeId}:`, error);
+                    }
+                }
+                
+                // Then close the controller
                 await commissioningController.close();
             } catch (error) {
                 logger.error('Error closing commissioning controller:', error);
