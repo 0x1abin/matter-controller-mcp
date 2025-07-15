@@ -48,7 +48,7 @@ npm run build
 ```bash
 npx matter-controller-mcp
 # or
-mcp-server-matterController
+matter-controller-mcp
 ```
 
 ### SSE Transport
@@ -56,7 +56,7 @@ mcp-server-matterController
 ```bash
 npx matter-controller-mcp sse
 # or
-mcp-server-matterController sse
+matter-controller-mcp sse
 ```
 
 ### Streamable HTTP Transport
@@ -64,7 +64,7 @@ mcp-server-matterController sse
 ```bash
 npx matter-controller-mcp streamableHttp
 # or
-mcp-server-matterController streamableHttp
+matter-controller-mcp streamableHttp
 ```
 
 ## Configuration
@@ -199,6 +199,7 @@ npm run build      # Build the project
 npm run watch      # Watch mode for development
 npm run start      # Start with stdio transport
 npm run start:sse  # Start with SSE transport
+npm run start:streamableHttp # Start with streamable HTTP transport
 ```
 
 ### Code Style
