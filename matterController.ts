@@ -197,79 +197,6 @@ namespace NodeIdUtils {
     }
 }
 
-// Auto-connect all commissioned devices
-async function autoConnectDevices() {
-    if (!commissioningController) {
-        logger.error('Cannot auto-connect devices: Controller not initialized');
-        return;
-    }
-    
-    try {
-        const nodes = commissioningController.getCommissionedNodes();
-        logger.info(`Auto-connecting ${nodes.length} commissioned devices...`);
-        
-        let connectedCount = 0;
-        
-        for (const nodeId of nodes) {
-            try {
-                const nodeIdString = NodeIdUtils.nodeIdToString(nodeId);
-                
-                // Get the node and check if it's already connected
-                const node = await commissioningController.getNode(nodeId);
-                
-                if (node.isConnected) {
-                    logger.info(`Device ${nodeIdString} already connected, skipping`);
-                    connectedCount++;
-                    continue;
-                }
-                
-                logger.info(`Auto-connecting to device ${nodeIdString}...`);
-                
-                // Setup event handlers
-                node.events.attributeChanged.on(({ path: { nodeId, clusterId, endpointId, attributeName }, value }: any) => {
-                    logger.info(`Attribute changed ${nodeId}: ${endpointId}/${clusterId}/${attributeName} = ${Diagnostic.json(value)}`);
-                });
-
-                node.events.stateChanged.on((info: any) => {
-                    logger.info(`Node ${nodeId} state changed: ${info}`);
-                });
-
-                // Connect if not already connected
-                if (!node.isConnected) {
-                    await node.connect();
-                }
-
-                // Wait for initialization
-                if (!node.initialized) {
-                    await node.events.initialized;
-                }
-                
-                logger.info(`Successfully connected to device ${nodeIdString}`);
-                connectedCount++;
-                
-                // Auto-subscribe to events
-                node.events.attributeChanged.on(({ path: { nodeId, clusterId, endpointId, attributeName }, value }: any) => {
-                    logger.info(`[${nodeId}] Attribute ${endpointId}/${clusterId}/${attributeName} changed to ${Diagnostic.json(value)}`);
-                });
-
-                node.events.eventTriggered.on(({ path: { nodeId, clusterId, endpointId, eventName }, events }: any) => {
-                    logger.info(`[${nodeId}] Event ${endpointId}/${clusterId}/${eventName} triggered: ${Diagnostic.json(events)}`);
-                });
-
-                deviceSubscriptions.set(nodeIdString, true);
-                
-            } catch (error) {
-                logger.error(`Failed to auto-connect to device ${nodeId}: ${error}`);
-                // Continue with next device
-            }
-        }
-        
-        logger.info(`Auto-connected ${connectedCount} devices successfully`);
-    } catch (error) {
-        logger.error('Failed to auto-connect devices:', error);
-    }
-}
-
 // Auto-initialize the Matter controller
 async function autoInitializeController() {
     try {
@@ -298,9 +225,6 @@ async function autoInitializeController() {
         await commissioningController.start();
         
         logger.info(`Matter Controller auto-initialized successfully with ID: ${controllerUniqueId}`);
-        
-        // Auto-connect all commissioned devices
-        await autoConnectDevices();
         
     } catch (error) {
         logger.error('Failed to auto-initialize Matter controller:', error);
