@@ -287,14 +287,12 @@ async function autoInitializeController() {
             (await controllerStorage.has("fabriclabel") ? await controllerStorage.get<string>("fabriclabel") : "Matter Controller MCP");
         await controllerStorage.set("fabriclabel", adminFabricLabel);
 
-        const autoConnect = true; // Always auto connect
-
         commissioningController = new CommissioningController({
             environment: {
                 environment: environment,
                 id: controllerUniqueId,
             },
-            autoConnect,
+            autoConnect: true,
             adminFabricLabel: adminFabricLabel,
         });
 
