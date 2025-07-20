@@ -114,7 +114,6 @@ let commissioningController: CommissioningController | null = null;
 let deviceSubscriptions: Map<string, any> = new Map();
 let controllerUniqueId: string = '';
 let adminFabricLabel: string = '';
-let isControllerInitialized: boolean = false;
 
 // Configure logging
 function configureLogging() {
@@ -297,7 +296,6 @@ async function autoInitializeController() {
         });
 
         await commissioningController.start();
-        isControllerInitialized = true;
         
         logger.info(`Matter Controller auto-initialized successfully with ID: ${controllerUniqueId}`);
         
@@ -409,8 +407,6 @@ async function handleGetControllerStatus(args: any) {
             {
                 type: 'text',
                 text: JSON.stringify({
-                    initialized: isControllerInitialized,
-                    initializing: !isControllerInitialized,
                     uniqueId: controllerUniqueId || 'not set',
                     adminFabricLabel: adminFabricLabel || 'not set',
                     commissioning: commissioningController !== null,
