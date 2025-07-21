@@ -84,6 +84,13 @@ const ReadAttributesSchema = z.object({
     attributeIds: z.array(z.number()).optional().describe('Attribute IDs to read (if not provided, reads all available attributes in the cluster)')
 });
 
+const ReadAttributeSchema = z.object({
+    nodeId: z.string().describe('Node ID of the device'),
+    endpointId: z.number().describe('Endpoint ID'),
+    clusterId: z.number().describe('Cluster ID'),
+    attributeId: z.number().describe('Attribute ID')
+});
+
 const WriteAttributesSchema = z.object({
     nodeId: z.string().describe('Node ID of the device'),
     endpointId: z.number().default(1).describe('Endpoint ID'),
@@ -108,6 +115,7 @@ enum ToolName {
     DECOMMISSION_DEVICE = 'decommission_device',
     WRITE_ATTRIBUTES = 'write_attributes',
     READ_ALL_ATTRIBUTES = 'read_all_attributes',
+    READ_ATTRIBUTE = 'read_attribute',
 }
 
 // Global variables for the MCP server instance
@@ -967,6 +975,55 @@ async function handleReadAllAttributes(args: any) {
     }
 }
 
+async function handleReadAttribute(args: any) {
+    const validatedArgs = ReadAttributeSchema.parse(args);
+    
+    // Use the unified validation method
+    const nodeIdString = NodeIdUtils.validateAndNormalizeNodeId(validatedArgs.nodeId);
+    const node = await ensureDeviceConnected(nodeIdString);
+
+    try {
+        const allAttributes = await node.readAllAttributes();
+        const attribute = allAttributes.find(item => 
+            item.path.endpointId === validatedArgs.endpointId &&
+            item.path.clusterId === validatedArgs.clusterId &&
+            item.path.attributeId === validatedArgs.attributeId
+        );
+
+        if (!attribute) {
+            throw new McpError(ErrorCode.InvalidRequest, `Attribute ${validatedArgs.attributeId} not found on endpoint ${validatedArgs.endpointId} of cluster ${validatedArgs.clusterId}`);
+        }
+
+        const compactedAttribute = {
+            nodeId: nodeIdString,
+            endpointId: attribute.path.endpointId,
+            clusterId: attribute.path.clusterId,
+            attributeId: attribute.path.attributeId,
+            attributeName: attribute.path.attributeName,
+            value: attribute.value
+        };
+
+        // Convert any BigInt values to strings for JSON serialization
+        const processedAttribute = JSON.parse(JSON.stringify(compactedAttribute, (key, value) => {
+            if (typeof value === 'bigint') {
+                return value.toString();
+            }
+            return value;
+        }));
+
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text: `Attribute ${validatedArgs.attributeId} for device ${nodeIdString}:\n${JSON.stringify(processedAttribute, null)}`
+                }
+            ]
+        };
+    } catch (error) {
+        throw new McpError(ErrorCode.InternalError, `Failed to read attribute: ${error}`);
+    }
+}
+
 // Main createServer function
 export const createServer = () => {
 
@@ -1041,6 +1098,11 @@ export const createServer = () => {
                     name: ToolName.READ_ALL_ATTRIBUTES,
                     description: 'Read all attributes from a device using PairedNode readAllAttributes method',
                     inputSchema: zodToJsonSchema(ReadAllAttributesSchema)
+                },
+                {
+                    name: ToolName.READ_ATTRIBUTE,
+                    description: 'Read a specific attribute from a device',
+                    inputSchema: zodToJsonSchema(ReadAttributeSchema)
                 }
             ] as Tool[]
         };
@@ -1073,6 +1135,8 @@ export const createServer = () => {
                     return await handleWriteAttributes(args);
                 case ToolName.READ_ALL_ATTRIBUTES:
                     return await handleReadAllAttributes(args);
+                case ToolName.READ_ATTRIBUTE:
+                    return await handleReadAttribute(args);
                 default:
                     throw new McpError(
                         ErrorCode.MethodNotFound,
