@@ -69,10 +69,6 @@ const ControlColorDeviceSchema = z.object({
     endpointId: z.number().default(1).describe('Endpoint ID')
 });
 
-const SubscribeDeviceEventsSchema = z.object({
-    nodeId: z.string().describe('Node ID of the device')
-});
-
 const DecommissionDeviceSchema = z.object({
     nodeId: z.string().describe('Node ID of the device to decommission')
 });
@@ -111,7 +107,6 @@ enum ToolName {
     CONTROL_ONOFF_DEVICE = 'control_onoff_device',
     CONTROL_LEVEL_DEVICE = 'control_level_device',
     CONTROL_COLOR_DEVICE = 'control_color_device',
-    SUBSCRIBE_DEVICE_EVENTS = 'subscribe_device_events',
     DECOMMISSION_DEVICE = 'decommission_device',
     WRITE_ATTRIBUTES = 'write_attributes',
     READ_ALL_ATTRIBUTES = 'read_all_attributes',
@@ -348,7 +343,6 @@ async function handleGetControllerStatus(args: any) {
                     commissioning: commissioningController !== null,
                     commissionedDevices: commissioningController?.getCommissionedNodes().length || 0,
                     connectedDevices: connectedDevicesCount,
-                    subscribedDevices: deviceSubscriptions.size
                 }, null, 2)
             }
         ]
@@ -443,13 +437,11 @@ async function handleGetCommissionedDevices(args: any) {
                 connectionStatus.push({
                     nodeId,
                     connected: node.isConnected,
-                    subscribed: deviceSubscriptions.has(nodeId)
                 });
             } catch (error) {
                 connectionStatus.push({
                     nodeId,
                     connected: false,
-                    subscribed: deviceSubscriptions.has(nodeId),
                     error: `Failed to get node status: ${error}`
                 });
             }
@@ -771,39 +763,6 @@ async function handleControlColorDevice(args: any) {
     }
 }
 
-async function handleSubscribeDeviceEvents(args: any) {
-    const validatedArgs = SubscribeDeviceEventsSchema.parse(args);
-    
-    // Use the unified validation method
-    const nodeIdString = NodeIdUtils.validateAndNormalizeNodeId(validatedArgs.nodeId);
-    const node = await ensureDeviceConnected(nodeIdString);
-
-    try {
-        // Subscribe to attribute changes
-        node.events.attributeChanged.on(({ path: { nodeId, clusterId, endpointId, attributeName }, value }: any) => {
-            logger.info(`[${nodeId}] Attribute ${endpointId}/${clusterId}/${attributeName} changed to ${Diagnostic.json(value)}`);
-        });
-
-        // Subscribe to events
-        node.events.eventTriggered.on(({ path: { nodeId, clusterId, endpointId, eventName }, events }: any) => {
-            logger.info(`[${nodeId}] Event ${endpointId}/${clusterId}/${eventName} triggered: ${Diagnostic.json(events)}`);
-        });
-
-        deviceSubscriptions.set(nodeIdString, true);
-
-        return {
-            content: [
-                {
-                    type: 'text',
-                    text: `Subscribed to events for device ${nodeIdString}`
-                }
-            ]
-        };
-    } catch (error) {
-        throw new McpError(ErrorCode.InternalError, `Failed to subscribe to device events: ${error}`);
-    }
-}
-
 async function handleDecommissionDevice(args: any) {
     const validatedArgs = DecommissionDeviceSchema.parse(args);
     
@@ -1080,11 +1039,6 @@ export const createServer = () => {
                     inputSchema: zodToJsonSchema(ControlColorDeviceSchema)
                 },
                 {
-                    name: ToolName.SUBSCRIBE_DEVICE_EVENTS,
-                    description: 'Subscribe to device attribute changes and events',
-                    inputSchema: zodToJsonSchema(SubscribeDeviceEventsSchema)
-                },
-                {
                     name: ToolName.DECOMMISSION_DEVICE,
                     description: 'Decommission a commissioned Matter device',
                     inputSchema: zodToJsonSchema(DecommissionDeviceSchema)
@@ -1127,8 +1081,6 @@ export const createServer = () => {
                     return await handleControlLevelDevice(args);
                 case ToolName.CONTROL_COLOR_DEVICE:
                     return await handleControlColorDevice(args);
-                case ToolName.SUBSCRIBE_DEVICE_EVENTS:
-                    return await handleSubscribeDeviceEvents(args);
                 case ToolName.DECOMMISSION_DEVICE:
                     return await handleDecommissionDevice(args);
                 case ToolName.WRITE_ATTRIBUTES:
