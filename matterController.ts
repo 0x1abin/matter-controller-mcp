@@ -91,6 +91,10 @@ const WriteAttributesSchema = z.object({
     attributes: z.record(z.string(), z.any()).describe('Attributes to write as key-value pairs (key is attribute ID as string, value is the attribute value)')
 });
 
+const ReadAllAttributesSchema = z.object({
+    nodeId: z.string().describe('Node ID of the device')
+});
+
 // Tool names enum
 enum ToolName {
     GET_CONTROLLER_STATUS = 'get_controller_status',
@@ -103,6 +107,7 @@ enum ToolName {
     SUBSCRIBE_DEVICE_EVENTS = 'subscribe_device_events',
     DECOMMISSION_DEVICE = 'decommission_device',
     WRITE_ATTRIBUTES = 'write_attributes',
+    READ_ALL_ATTRIBUTES = 'read_all_attributes',
 }
 
 // Global variables for the MCP server instance
@@ -921,6 +926,47 @@ async function handleWriteAttributes(args: any) {
     }
 }
 
+async function handleReadAllAttributes(args: any) {
+    const validatedArgs = ReadAllAttributesSchema.parse(args);
+    
+    // Use the unified validation method
+    const nodeIdString = NodeIdUtils.validateAndNormalizeNodeId(validatedArgs.nodeId);
+    const node = await ensureDeviceConnected(nodeIdString);
+
+    try {
+        // Use the PairedNode's readAllAttributes method
+        const allAttributes = await node.readAllAttributes();
+        console.log("allAttributes:", allAttributes);
+
+        const compactedAttributes = allAttributes.map((item: any) => {
+            return {
+                path: `${item.path.endpointId}/${item.path.clusterId}/${item.path.attributeId}`,
+                name: item.path.attributeName,
+                value: item.value
+            }
+        });
+
+        // Convert any BigInt values to strings for JSON serialization
+        const processedAttributes = JSON.parse(JSON.stringify(compactedAttributes, (key, value) => {
+            if (typeof value === 'bigint') {
+                return value.toString();
+            }
+            return value;
+        }));
+
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text: `All attributes for device ${nodeIdString}:\n${JSON.stringify(processedAttributes, null)}`
+                }
+            ]
+        };
+    } catch (error) {
+        throw new McpError(ErrorCode.InternalError, `Failed to read all attributes: ${error}`);
+    }
+}
+
 // Main createServer function
 export const createServer = () => {
 
@@ -990,6 +1036,11 @@ export const createServer = () => {
                     name: ToolName.WRITE_ATTRIBUTES,
                     description: 'Write attributes to a device cluster (supports batch writing)',
                     inputSchema: zodToJsonSchema(WriteAttributesSchema)
+                },
+                {
+                    name: ToolName.READ_ALL_ATTRIBUTES,
+                    description: 'Read all attributes from a device using PairedNode readAllAttributes method',
+                    inputSchema: zodToJsonSchema(ReadAllAttributesSchema)
                 }
             ] as Tool[]
         };
@@ -1020,6 +1071,8 @@ export const createServer = () => {
                     return await handleDecommissionDevice(args);
                 case ToolName.WRITE_ATTRIBUTES:
                     return await handleWriteAttributes(args);
+                case ToolName.READ_ALL_ATTRIBUTES:
+                    return await handleReadAllAttributes(args);
                 default:
                     throw new McpError(
                         ErrorCode.MethodNotFound,
