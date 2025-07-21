@@ -102,7 +102,6 @@ enum ToolName {
     CONTROL_COLOR_DEVICE = 'control_color_device',
     SUBSCRIBE_DEVICE_EVENTS = 'subscribe_device_events',
     DECOMMISSION_DEVICE = 'decommission_device',
-    READ_ATTRIBUTES = 'read_attributes',
     WRITE_ATTRIBUTES = 'write_attributes',
 }
 
@@ -860,107 +859,6 @@ async function handleDecommissionDevice(args: any) {
     }
 }
 
-async function handleReadAttributes(args: any) {
-    const validatedArgs = ReadAttributesSchema.parse(args);
-    
-    // Use the unified validation method
-    const nodeIdString = NodeIdUtils.validateAndNormalizeNodeId(validatedArgs.nodeId);
-    const node = await ensureDeviceConnected(nodeIdString);
-
-    try {
-        const devices = node.getDevices();
-        const device = devices.find((d: any) => d.number === validatedArgs.endpointId);
-
-        if (!device) {
-            throw new McpError(ErrorCode.InvalidRequest, `Endpoint ${validatedArgs.endpointId} not found`);
-        }
-
-        const results: any = {
-            nodeId: nodeIdString,
-            endpointId: validatedArgs.endpointId,
-            clusterId: validatedArgs.clusterId,
-            attributes: {}
-        };
-
-        // Get the appropriate cluster client based on cluster ID
-        let clusterClient: any = null;
-        
-        switch (validatedArgs.clusterId) {
-            case 6: // OnOff
-                clusterClient = device.getClusterClient(OnOff.Complete);
-                break;
-            case 8: // LevelControl
-                clusterClient = device.getClusterClient(LevelControl.Complete);
-                break;
-            case 768: // ColorControl
-                clusterClient = device.getClusterClient(ColorControl.Complete);
-                break;
-            case 40: // BasicInformation
-                clusterClient = device.getClusterClient(BasicInformationCluster);
-                break;
-            case 29: // Descriptor
-                clusterClient = device.getClusterClient(DescriptorCluster);
-                break;
-            default:
-                throw new McpError(ErrorCode.InvalidRequest, `Cluster ${validatedArgs.clusterId} not supported for attribute reading`);
-        }
-
-        if (!clusterClient) {
-            throw new McpError(ErrorCode.InvalidRequest, `Cluster ${validatedArgs.clusterId} not available on device ${nodeIdString} endpoint ${validatedArgs.endpointId}`);
-        }
-
-        if (validatedArgs.attributeIds && validatedArgs.attributeIds.length > 0) {
-            // Read specific attributes
-            for (const attributeId of validatedArgs.attributeIds) {
-                try {
-                    // Use the attributes property to read specific attributes
-                    const attributeValue = await clusterClient.attributes[Object.keys(clusterClient.attributes)[attributeId]]?.get();
-                    results.attributes[attributeId] = attributeValue;
-                } catch (error) {
-                    logger.warn(`Failed to read attribute ${attributeId} from cluster ${validatedArgs.clusterId}: ${error}`);
-                    results.attributes[attributeId] = { error: `Failed to read: ${error}` };
-                }
-            }
-        } else {
-            // Read all available attributes in the cluster
-            try {
-                const attributeKeys = Object.keys(clusterClient.attributes);
-                for (const attributeKey of attributeKeys) {
-                    try {
-                        const attributeValue = await clusterClient.attributes[attributeKey]?.get();
-                        results.attributes[attributeKey] = attributeValue;
-                    } catch (error) {
-                        logger.warn(`Failed to read attribute ${attributeKey} from cluster ${validatedArgs.clusterId}: ${error}`);
-                        results.attributes[attributeKey] = { error: `Failed to read: ${error}` };
-                    }
-                }
-            } catch (error) {
-                logger.warn(`Failed to read attributes from cluster ${validatedArgs.clusterId}: ${error}`);
-                results.attributes = { error: `Failed to read cluster attributes: ${error}` };
-            }
-        }
-
-        // Convert any BigInt values to strings for JSON serialization
-        const processedResults = JSON.parse(JSON.stringify(results, (key, value) => {
-            if (typeof value === 'bigint') {
-                return value.toString();
-            }
-            return value;
-        }));
-
-        return {
-            content: [
-                {
-                    type: 'text',
-                    text: `Attributes read from device ${nodeIdString}:\n${JSON.stringify(processedResults, null, 2)}`
-                }
-            ]
-        };
-    } catch (error) {
-        throw new McpError(ErrorCode.InternalError, `Failed to read attributes: ${error}`);
-    }
-}
-
 async function handleWriteAttributes(args: any) {
     const validatedArgs = WriteAttributesSchema.parse(args);
     
@@ -1089,11 +987,6 @@ export const createServer = () => {
                     inputSchema: zodToJsonSchema(DecommissionDeviceSchema)
                 },
                 {
-                    name: ToolName.READ_ATTRIBUTES,
-                    description: 'Read attributes from a device cluster (supports batch reading and whole cluster reading)',
-                    inputSchema: zodToJsonSchema(ReadAttributesSchema)
-                },
-                {
                     name: ToolName.WRITE_ATTRIBUTES,
                     description: 'Write attributes to a device cluster (supports batch writing)',
                     inputSchema: zodToJsonSchema(WriteAttributesSchema)
@@ -1125,8 +1018,6 @@ export const createServer = () => {
                     return await handleSubscribeDeviceEvents(args);
                 case ToolName.DECOMMISSION_DEVICE:
                     return await handleDecommissionDevice(args);
-                case ToolName.READ_ATTRIBUTES:
-                    return await handleReadAttributes(args);
                 case ToolName.WRITE_ATTRIBUTES:
                     return await handleWriteAttributes(args);
                 default:
