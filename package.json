@@ -1,6 +1,6 @@
 {
   "name": "matter-controller-mcp",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A powerful Model Context Protocol (MCP) server for Matter device control and management",
   "license": "MIT",
   "author": {
