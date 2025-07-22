@@ -118,7 +118,6 @@ let logger: Logger;
 let environment: Environment;
 let storageService: StorageService;
 let commissioningController: CommissioningController | null = null;
-let deviceSubscriptions: Map<string, any> = new Map();
 let controllerUniqueId: string = '';
 let adminFabricLabel: string = '';
 
@@ -828,9 +827,6 @@ async function handleDecommissionDevice(args: any) {
             }
         }
         
-        // Clean up our local state
-        deviceSubscriptions.delete(nodeIdString);
-
         return {
             content: [
                 {
