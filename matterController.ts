@@ -21,7 +21,7 @@ import {
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
-import { Diagnostic, Environment, Logger, singleton, StorageService, Time } from "@matter/main";
+import { Diagnostic, Environment, Logger, singleton, StorageService, Time, Bytes } from "@matter/main";
 import { BasicInformationCluster, DescriptorCluster, GeneralCommissioning, OnOff, LevelControl, ColorControl } from "@matter/main/clusters";
 import { Ble, ClusterClientObj } from "@matter/main/protocol";
 import { ManualPairingCodeCodec, NodeId } from "@matter/main/types";
@@ -137,6 +137,24 @@ function configureLogging() {
     } catch (error) {
         console.error('Failed to configure logging:', error);
     }
+}
+
+function serializeJson(data: any) {
+    return JSON.stringify(data, (key, value) => {
+        if (key === 'nodeId' && typeof value != 'string') {
+            return NodeIdUtils.nodeIdToString(value);
+        }
+        if (typeof value === "bigint") {
+            return value.toString();
+        }
+        if (value instanceof Uint8Array) {
+            return Bytes.toHex(value);
+        }
+        if (value === undefined) {
+            return "undefined";
+        }
+        return value;
+    });
 }
 
 // Unified NodeId encoding/decoding utilities based on NodeId.ts
@@ -573,18 +591,13 @@ async function handleGetDeviceInfo(args: any) {
         }
 
         // Convert any BigInt values to strings for JSON serialization
-        const processedDeviceInfo = JSON.parse(JSON.stringify(deviceInfo, (key, value) => {
-            if (key === 'nodeId' && typeof value != 'string') {
-                return NodeIdUtils.nodeIdToString(value);
-            }
-            return value;
-        }));
+        const processedDeviceInfo = serializeJson(deviceInfo);
 
         return {
             content: [
                 {
                     type: 'text',
-                    text: `Device ${nodeIdString} detailed information:\n${JSON.stringify(processedDeviceInfo, null)}`
+                    text: `Device ${nodeIdString} detailed information:\n${processedDeviceInfo}`
                 }
             ]
         };
@@ -873,18 +886,13 @@ async function handleWriteAttributes(args: any) {
         }
 
         // Convert any BigInt values to strings for JSON serialization
-        const processedResults = JSON.parse(JSON.stringify(results, (key, value) => {
-            if (typeof value === 'bigint') {
-                return value.toString();
-            }
-            return value;
-        }));
+        const processedResults = serializeJson(results);
 
         return {
             content: [
                 {
                     type: 'text',
-                    text: `Attributes write results for device ${nodeIdString}:\n${JSON.stringify(processedResults, null, 2)}`
+                    text: `Attributes write results for device ${nodeIdString}:\n${processedResults}`
                 }
             ]
         };
@@ -963,18 +971,13 @@ async function handleReadAttribute(args: any) {
         };
 
         // Convert any BigInt values to strings for JSON serialization
-        const processedAttribute = JSON.parse(JSON.stringify(compactedAttribute, (key, value) => {
-            if (typeof value === 'bigint') {
-                return value.toString();
-            }
-            return value;
-        }));
+        const processedAttribute = serializeJson(compactedAttribute);
 
         return {
             content: [
                 {
                     type: 'text',
-                    text: `Attribute ${validatedArgs.attributeId} for device ${nodeIdString}:\n${JSON.stringify(processedAttribute, null)}`
+                    text: `Attribute ${validatedArgs.attributeId} for device ${nodeIdString}:\n${processedAttribute}`
                 }
             ]
         };
