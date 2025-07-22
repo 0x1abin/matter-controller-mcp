@@ -80,13 +80,6 @@ const ReadAttributesSchema = z.object({
     attributeIds: z.array(z.number()).optional().describe('Attribute IDs to read (if not provided, reads all available attributes in the cluster)')
 });
 
-const ReadAttributeSchema = z.object({
-    nodeId: z.string().describe('Node ID of the device'),
-    endpointId: z.number().describe('Endpoint ID'),
-    clusterId: z.number().describe('Cluster ID'),
-    attributeId: z.number().describe('Attribute ID')
-});
-
 const WriteAttributesSchema = z.object({
     nodeId: z.string().describe('Node ID of the device'),
     endpointId: z.number().default(1).describe('Endpoint ID'),
@@ -105,7 +98,7 @@ enum ToolName {
     CONTROL_LEVEL_DEVICE = 'control_level_device',
     CONTROL_COLOR_DEVICE = 'control_color_device',
     WRITE_ATTRIBUTES = 'write_attributes',
-    READ_ATTRIBUTE = 'read_attribute',
+    READ_ATTRIBUTES = 'read_attributes',
 }
 
 // Global variables for the MCP server instance
@@ -892,8 +885,8 @@ async function handleWriteAttributes(args: any) {
     }
 }
 
-async function handleReadAttribute(args: any) {
-    const validatedArgs = ReadAttributeSchema.parse(args);
+async function handleReadAttributes(args: any) {
+    const validatedArgs = ReadAttributesSchema.parse(args);
     
     // Use the unified validation method
     const nodeIdString = NodeIdUtils.validateAndNormalizeNodeId(validatedArgs.nodeId);
@@ -901,38 +894,89 @@ async function handleReadAttribute(args: any) {
 
     try {
         const allAttributes = await node.readAllAttributes();
-        const attribute = allAttributes.find(item => 
+        
+        // Filter attributes by endpoint and cluster
+        const clusterAttributes = allAttributes.filter(item => 
             item.path.endpointId === validatedArgs.endpointId &&
-            item.path.clusterId === validatedArgs.clusterId &&
-            item.path.attributeId === validatedArgs.attributeId
+            item.path.clusterId === validatedArgs.clusterId
         );
 
-        if (!attribute) {
-            throw new McpError(ErrorCode.InvalidRequest, `Attribute ${validatedArgs.attributeId} not found on endpoint ${validatedArgs.endpointId} of cluster ${validatedArgs.clusterId}`);
+        let filteredAttributes;
+        
+        if (validatedArgs.attributeIds && validatedArgs.attributeIds.length > 0) {
+            // Read only specified attributes
+            filteredAttributes = clusterAttributes.filter(item => 
+                validatedArgs.attributeIds!.includes(item.path.attributeId)
+            );
+            
+            // Check if all requested attributes were found
+            const foundAttributeIds = filteredAttributes.map(attr => attr.path.attributeId);
+            const missingAttributes = validatedArgs.attributeIds.filter(id => !foundAttributeIds.includes(id));
+            
+            if (missingAttributes.length > 0) {
+                logger.warn(`Some requested attributes were not found: ${missingAttributes.join(', ')}`);
+            }
+        } else {
+            // Read all attributes in the cluster
+            filteredAttributes = clusterAttributes;
         }
 
-        const compactedAttribute = {
-            nodeId: nodeIdString,
-            endpointId: attribute.path.endpointId,
-            clusterId: attribute.path.clusterId,
-            attributeId: attribute.path.attributeId,
-            attributeName: attribute.path.attributeName,
-            value: attribute.value
-        };
+        if (filteredAttributes.length === 0) {
+            const message = validatedArgs.attributeIds 
+                ? `No requested attributes found on endpoint ${validatedArgs.endpointId} of cluster ${validatedArgs.clusterId}`
+                : `No attributes found on endpoint ${validatedArgs.endpointId} of cluster ${validatedArgs.clusterId}`;
+            throw new McpError(ErrorCode.InvalidRequest, message);
+        }
+
+        // Transform raw Matter.js attribute data into optimized structure
+        let responseData;
+        
+        if (filteredAttributes.length === 1) {
+            // Single attribute: return flattened structure
+            const attr = filteredAttributes[0];
+            responseData = {
+                nodeId: nodeIdString,
+                endpointId: attr.path.endpointId,
+                clusterId: attr.path.clusterId,
+                attributeId: attr.path.attributeId,
+                attributeName: attr.path.attributeName,
+                value: attr.value,
+                version: attr.version,
+            };
+        } else {
+            // Multiple attributes: return structured format with common info extracted
+            responseData = {
+                nodeId: nodeIdString,
+                endpointId: validatedArgs.endpointId,
+                clusterId: validatedArgs.clusterId,
+                attributeCount: filteredAttributes.length,
+                isSingleAttribute: false,
+                attributes: filteredAttributes.map(attr => ({
+                    attributeId: attr.path.attributeId,
+                    attributeName: attr.path.attributeName,
+                    value: attr.value,
+                    version: attr.version
+                }))
+            };
+        }
 
         // Convert any BigInt values to strings for JSON serialization
-        const processedAttribute = serializeJson(compactedAttribute);
+        const processedData = serializeJson(responseData);
+
+        const attributeCountText = validatedArgs.attributeIds 
+            ? `${filteredAttributes.length} requested attribute${filteredAttributes.length > 1 ? 's' : ''}`
+            : `${filteredAttributes.length} attribute${filteredAttributes.length > 1 ? 's' : ''}`;
 
         return {
             content: [
                 {
                     type: 'text',
-                    text: `Attribute ${validatedArgs.attributeId} for device ${nodeIdString}:\n${processedAttribute}`
+                    text: `${attributeCountText} for device ${nodeIdString} (endpoint ${validatedArgs.endpointId}, cluster ${validatedArgs.clusterId}):\n${processedData}`
                 }
             ]
         };
     } catch (error) {
-        throw new McpError(ErrorCode.InternalError, `Failed to read attribute: ${error}`);
+        throw new McpError(ErrorCode.InternalError, `Failed to read attributes: ${error}`);
     }
 }
 
@@ -1002,9 +1046,9 @@ export const createServer = () => {
                     inputSchema: zodToJsonSchema(WriteAttributesSchema)
                 },
                 {
-                    name: ToolName.READ_ATTRIBUTE,
-                    description: 'Read a specific attribute from a device',
-                    inputSchema: zodToJsonSchema(ReadAttributeSchema)
+                    name: ToolName.READ_ATTRIBUTES,
+                    description: 'Read attributes from a device cluster (can read specific attributes or all attributes in a cluster)',
+                    inputSchema: zodToJsonSchema(ReadAttributesSchema)
                 }
             ] as Tool[]
         };
@@ -1033,8 +1077,8 @@ export const createServer = () => {
                     return await handleDecommissionDevice(args);
                 case ToolName.WRITE_ATTRIBUTES:
                     return await handleWriteAttributes(args);
-                case ToolName.READ_ATTRIBUTE:
-                    return await handleReadAttribute(args);
+                case ToolName.READ_ATTRIBUTES:
+                    return await handleReadAttributes(args);
                 default:
                     throw new McpError(
                         ErrorCode.MethodNotFound,
