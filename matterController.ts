@@ -453,18 +453,13 @@ async function handleGetCommissionedDevices(args: any) {
         }
 
         // Convert any BigInt values to strings for JSON serialization
-        const processedDetails = JSON.parse(JSON.stringify(serializedDetails, (key, value) => {
-          if (key === 'nodeId') {
-            return NodeIdUtils.nodeIdToString(value);
-        }
-            return value;
-        }));
+        const processedDetails = serializeJson(serializedDetails);
 
         return {
             content: [
                 {
                     type: 'text',
-                    text: `Commissioned nodes: ${JSON.stringify(serializedNodes, null, 2)}\n\nConnection status: ${JSON.stringify(connectionStatus, null, 2)}\n\nDetails: ${JSON.stringify(processedDetails, null, 2)}`
+                    text: `Commissioned nodes: ${JSON.stringify(serializedNodes, null, 2)}\n\nConnection status: ${JSON.stringify(connectionStatus, null, 2)}\n\nDetails: ${processedDetails}`
                 }
             ]
         };
