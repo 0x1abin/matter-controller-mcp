@@ -43,7 +43,9 @@ const CommissionDeviceSchema = z.object({
     wifiCredentials: z.string().optional().describe('WiFi credentials for BLE commissioning')
 });
 
-const GetCommissionedDevicesSchema = z.object({});
+const GetCommissionedDevicesSchema = z.object({
+    nodeId: z.string().optional().describe('Optional Node ID to get specific device info')
+});
 
 const GetDeviceInfoSchema = z.object({
     nodeId: z.string().describe('Node ID of the device')
@@ -411,20 +413,24 @@ async function handleGetCommissionedDevices(args: any) {
     }
 
     try {
-        const nodes = commissioningController.getCommissionedNodes();
-        const nodeDetails = commissioningController.getCommissionedNodesDetails();
+        let nodes = commissioningController.getCommissionedNodes();
+        let nodeDetails: any[] = commissioningController.getCommissionedNodesDetails();
 
-        // Use the utility function to serialize NodeIds
-        const serializedNodes = NodeIdUtils.serializeNodeIds(nodes);
-        const serializedDetails = Object.fromEntries(
-            Object.entries(nodeDetails).map(([key, value]) => [key, value])
-        );
-        
+        // Return all nodes if no specific nodeId is requested
+        if (validatedArgs.nodeId) {
+            const requestedNodeId = NodeIdUtils.parseNodeId(validatedArgs.nodeId);
+            if (!nodes.includes(requestedNodeId)) {
+                throw new McpError(ErrorCode.InvalidRequest, `Node ${requestedNodeId} is not commissioned`);
+            }
+            nodes = [requestedNodeId];
+            nodeDetails = nodeDetails.find((node: any) => node.nodeId === requestedNodeId);
+        }
+
         // Add connection status to the details
         const connectionStatus: any[] = [];
-        for (const nodeId of serializedNodes) {
+        for (const nodeId of nodes) {
             try {
-                const node = await commissioningController.getNode(NodeIdUtils.parseNodeId(nodeId));
+                const node = await commissioningController.getNode(nodeId);
                 connectionStatus.push({
                     nodeId,
                     connected: node.isConnected,
@@ -438,14 +444,11 @@ async function handleGetCommissionedDevices(args: any) {
             }
         }
 
-        // Convert any BigInt values to strings for JSON serialization
-        const processedDetails = serializeJson(serializedDetails);
-
         return {
             content: [
                 {
                     type: 'text',
-                    text: `Commissioned nodes: ${JSON.stringify(serializedNodes, null, 2)}\n\nConnection status: ${JSON.stringify(connectionStatus, null, 2)}\n\nDetails: ${processedDetails}`
+                    text: `## Commissioned Nodes\n${NodeIdUtils.serializeNodeIds(nodes)}\n\n## Connection Status\n${serializeJson(connectionStatus)}\n\n## Details\n${serializeJson(nodeDetails)}`
                 }
             ]
         };
@@ -974,7 +977,7 @@ export const createServer = () => {
                 },
                 {
                     name: ToolName.GET_COMMISSIONED_DEVICES,
-                    description: 'Get list of commissioned devices',
+                    description: 'Get list of commissioned devices (optionally filter by specific nodeId)',
                     inputSchema: zodToJsonSchema(GetCommissionedDevicesSchema)
                 },
                 {
