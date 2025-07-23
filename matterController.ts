@@ -961,30 +961,30 @@ async function handleReadAttributes(args: any) {
         }
 
         // Transform raw Matter.js attribute data into optimized structure
-        let responseData: string[] = [];
-
+        let attributes: any[] = [];
         filteredAttributes.map(attr => (
-            responseData.push(
-                `${resolveAttributeName({
-                    endpointId: attr.path.endpointId,
-                    clusterId: attr.path.clusterId,
-                    attributeId: attr.path.attributeId,
-                })} = ${Diagnostic.json(attr.value)} (version=${attr.version})`
+            attributes.push(
+                {
+                    id: attr.path.attributeId,
+                    value: Diagnostic.json(attr.value),
+                    version: attr.version
+                }
             )
         ))
 
-        // Convert any BigInt values to strings for JSON serialization
-        const processedData = serializeJson(responseData);
-
-        const attributeCountText = validatedArgs.attributeIds 
-            ? `${filteredAttributes.length} requested attribute${filteredAttributes.length > 1 ? 's' : ''}`
-            : `${filteredAttributes.length} attribute${filteredAttributes.length > 1 ? 's' : ''}`;
+        const result = {
+            summary: `Attributes read results for device ${nodeIdString} (endpoint ${validatedArgs.endpointId}, cluster ${validatedArgs.clusterId})`,
+            nodeId: nodeIdString,
+            endpointId: validatedArgs.endpointId,
+            clusterId: validatedArgs.clusterId,
+            attributes,
+        }
 
         return {
             content: [
                 {
                     type: 'text',
-                    text: `${attributeCountText} for device ${nodeIdString} (endpoint ${validatedArgs.endpointId}, cluster ${validatedArgs.clusterId}):\n${processedData}`
+                    text: serializeJson(result)
                 }
             ]
         };
