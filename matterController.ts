@@ -484,14 +484,19 @@ async function handleGetCommissionedDevices(args: any) {
             }
         }
 
+        const result = {
+            summary: "Matter Commissioned Devices status and details",
+            nodeList: serializedNodes,
+            connectionStatus: connectionStatus,
+            descriptor: nodeDescriptor,
+            details: nodeDetails
+        }
+
         return {
             content: [
                 {
                     type: 'text',
-                    text:   `## Commissioned Nodes\n${serializeJson(serializedNodes)}\n\n` +
-                            `## Connection Status\n${serializeJson(connectionStatus)}\n\n` +
-                            `## Descriptor\n${serializeJson(nodeDescriptor)}\n\n` +
-                            `## Details\n${serializeJson(nodeDetails)}`
+                    text: serializeJson(result)
                 }
             ]
         };
