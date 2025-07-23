@@ -25,9 +25,11 @@ import { Diagnostic, Environment, Logger, singleton, StorageService, Time, Bytes
 import { BasicInformationCluster, DescriptorCluster, GeneralCommissioning, OnOff, LevelControl, ColorControl } from "@matter/main/clusters";
 import { Ble, ClusterClientObj } from "@matter/main/protocol";
 import { ManualPairingCodeCodec, NodeId } from "@matter/main/types";
-import { getClusterById, resolveAttributeName } from "@matter/types";
+import { ClusterId, getClusterById, getClusterNameById, resolveAttributeName } from "@matter/types";
 import { NodeJsBle } from "@matter/nodejs-ble";
 import { CommissioningController, NodeCommissioningOptions } from "@project-chip/matter.js";
+import { getDeviceTypeDefinitionFromModelByCode } from "@project-chip/matter.js/device";
+
 
 // Tool input schemas
 const GetControllerStatusSchema = z.object({});
@@ -426,6 +428,8 @@ async function handleGetCommissionedDevices(args: any) {
             nodeDetails = nodeDetails.find((node: any) => node.nodeId === requestedNodeId);
         }
 
+        const serializedNodes = NodeIdUtils.serializeNodeIds(nodes);
+
         // Add connection status to the details
         const connectionStatus: any[] = [];
         for (const nodeId of nodes) {
@@ -442,13 +446,52 @@ async function handleGetCommissionedDevices(args: any) {
                     error: `Failed to get node status: ${error}`
                 });
             }
+
+        }
+
+        // Add node descriptor to the details
+        const nodeDescriptor: any[] = [];
+        for (const nodeId of nodes) {
+            const node = await commissioningController.getNode(nodeId);
+            const descriptor = node.getRootClusterClient(DescriptorCluster);
+            if (descriptor) {
+                const _deviceTypeList = await descriptor.getDeviceTypeListAttribute();
+                const serverList = await descriptor.getServerListAttribute();
+                const clientList = await descriptor.getClientListAttribute();
+                const partsList = await descriptor.getPartsListAttribute();
+
+                const deviceTypeList = _deviceTypeList.map((item: any) => {
+                    const deviceTypeDefinition = getDeviceTypeDefinitionFromModelByCode(item.deviceType);
+                    return {
+                        deviceType: item.deviceType,
+                        revision: item.revision,
+                        deviceTypeName: deviceTypeDefinition?.name,
+                        deviceClass: deviceTypeDefinition?.deviceClass,
+                    }
+                });
+                const serverNames = serverList.map((id: any) => `${id}: ${getClusterNameById(ClusterId(id))}`);
+                const clientNames = clientList.map((id: any) => `${id}: ${getClusterNameById(ClusterId(id))}`);
+
+                nodeDescriptor.push({
+                    nodeId,
+                    deviceTypeList,
+                    serverList,
+                    serverNames,
+                    clientList,
+                    clientNames,
+                    endpointList: partsList,
+                });
+            }
         }
 
         return {
             content: [
                 {
                     type: 'text',
-                    text: `## Commissioned Nodes\n${NodeIdUtils.serializeNodeIds(nodes)}\n\n## Connection Status\n${serializeJson(connectionStatus)}\n\n## Details\n${serializeJson(nodeDetails)}`
+                    text:   `## Commissioned Nodes\n${serializeJson(serializedNodes)}\n\n` +
+                            `## Connection Status\n${serializeJson(connectionStatus)}\n\n` +
+                            `## Descriptor\n${serializeJson(nodeDescriptor)}\n\n` +
+                            `## Details\n${serializeJson(nodeDetails)}`
                 }
             ]
         };
