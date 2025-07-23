@@ -25,7 +25,7 @@ import { Diagnostic, Environment, Logger, singleton, StorageService, Time, Bytes
 import { BasicInformationCluster, DescriptorCluster, GeneralCommissioning, OnOff, LevelControl, ColorControl } from "@matter/main/clusters";
 import { Ble, ClusterClientObj } from "@matter/main/protocol";
 import { ManualPairingCodeCodec, NodeId } from "@matter/main/types";
-import { getClusterById } from "@matter/types";
+import { getClusterById, resolveAttributeName } from "@matter/types";
 import { NodeJsBle } from "@matter/nodejs-ble";
 import { CommissioningController, NodeCommissioningOptions } from "@project-chip/matter.js";
 
@@ -289,26 +289,12 @@ async function ensureDeviceConnected(nodeIdInput: string): Promise<any> {
         }
         
         logger.info(`Device ${nodeIdString} not connected, connecting now...`);
-        
-        // Setup event handlers
-        node.events.attributeChanged.on(({ path: { nodeId, clusterId, endpointId, attributeName }, value }: any) => {
-            logger.info(`Attribute changed ${nodeId}: ${endpointId}/${clusterId}/${attributeName} = ${Diagnostic.json(value)}`);
-        });
-
-        node.events.stateChanged.on((info: any) => {
-            logger.info(`Node ${nodeId} state changed: ${info}`);
-        });
 
         // Connect if not already connected
         if (!node.isConnected) {
             await node.connect();
         }
 
-        // Wait for initialization
-        if (!node.initialized) {
-            await node.events.initialized;
-        }
-        
         logger.info(`Successfully connected to device ${nodeIdString}`);
         
         return node;
@@ -924,36 +910,17 @@ async function handleReadAttributes(args: any) {
         }
 
         // Transform raw Matter.js attribute data into optimized structure
-        let responseData;
-        
-        if (filteredAttributes.length === 1) {
-            // Single attribute: return flattened structure
-            const attr = filteredAttributes[0];
-            responseData = {
-                nodeId: nodeIdString,
-                endpointId: attr.path.endpointId,
-                clusterId: attr.path.clusterId,
-                attributeId: attr.path.attributeId,
-                attributeName: attr.path.attributeName,
-                value: attr.value,
-                version: attr.version,
-            };
-        } else {
-            // Multiple attributes: return structured format with common info extracted
-            responseData = {
-                nodeId: nodeIdString,
-                endpointId: validatedArgs.endpointId,
-                clusterId: validatedArgs.clusterId,
-                attributeCount: filteredAttributes.length,
-                isSingleAttribute: false,
-                attributes: filteredAttributes.map(attr => ({
+        let responseData: string[] = [];
+
+        filteredAttributes.map(attr => (
+            responseData.push(
+                `${resolveAttributeName({
+                    endpointId: attr.path.endpointId,
+                    clusterId: attr.path.clusterId,
                     attributeId: attr.path.attributeId,
-                    attributeName: attr.path.attributeName,
-                    value: attr.value,
-                    version: attr.version
-                }))
-            };
-        }
+                })} = ${Diagnostic.json(attr.value)} (version=${attr.version})`
+            )
+        ))
 
         // Convert any BigInt values to strings for JSON serialization
         const processedData = serializeJson(responseData);
