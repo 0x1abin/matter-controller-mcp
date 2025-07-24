@@ -764,7 +764,7 @@ async function handleReadAttributes(args: any) {
             attributes.push(
                 {
                     id: attr.path.attributeId,
-                    value: Diagnostic.json(attr.value),
+                    value: attr.value,
                     version: attr.version
                 }
             )
