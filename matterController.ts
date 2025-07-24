@@ -334,47 +334,63 @@ async function handleGetCommissionedDevices(args: any) {
 
         }
 
-        // Add node descriptor to the details
-        const nodeDescriptor: any[] = [];
-        for (const nodeId of nodes) {
-            const node = await commissioningController.getNode(nodeId);
-            const descriptor = node.getRootClusterClient(DescriptorCluster);
-            if (descriptor) {
-                const _deviceTypeList = await descriptor.getDeviceTypeListAttribute();
-                const serverList = await descriptor.getServerListAttribute();
-                const clientList = await descriptor.getClientListAttribute();
-                const partsList = await descriptor.getPartsListAttribute();
+        // Add deviceTypeList to nodeDetails
+        const enhancedNodeDetails: any[] = [];
+        for (const node of nodeDetails) {
+            const enhancedNode = {
+                nodeId: node.nodeId,
+                operationalAddress: node.operationalAddress,
+                advertisedName: node.advertisedName,
+                discoveryData: node.discoveryData,
+                deviceMeta: node.deviceData.deviceMeta,
+                deviceTypeList: [] as any[],
+                basicInformation: {
+                    vendorName: node.deviceData.basicInformation.vendorName,
+                    productName: node.deviceData.basicInformation.productName,
+                    partNumber: node.deviceData.basicInformation.partNumber,
+                    location: node.deviceData.basicInformation.location,
+                    productLabel: node.deviceData.basicInformation.productLabel,
+                    productUrl: node.deviceData.basicInformation.productUrl,
+                    serialNumber: node.deviceData.basicInformation.serialNumber,
+                    softwareVersionString: node.deviceData.basicInformation.softwareVersionString,
+                    hardwareVersionString: node.deviceData.basicInformation.hardwareVersionString,
+                    manufacturingDate: node.deviceData.basicInformation.manufacturingDate,
+                    uniqueId: node.deviceData.basicInformation.uniqueId,
+                    capabilityMinima: node.deviceData.basicInformation.capabilityMinima,
+                    dataModelRevision: node.deviceData.basicInformation.dataModelRevision,
+                    specificationVersion: node.deviceData.basicInformation.specificationVersion,
+                    maxPathsPerInvoke: node.deviceData.basicInformation.maxPathsPerInvoke,
+                }
+            };
 
-                const deviceTypeList = _deviceTypeList.map((item: any) => {
-                    const deviceTypeDefinition = getDeviceTypeDefinitionFromModelByCode(item.deviceType);
-                    return {
-                        deviceType: item.deviceType,
-                        revision: item.revision,
-                        deviceTypeName: deviceTypeDefinition?.name,
-                        deviceClass: deviceTypeDefinition?.deviceClass,
-                    }
-                });
-                const serverNames = serverList.map((id: any) => `${id}: ${getClusterNameById(ClusterId(id))}`);
-                const clientNames = clientList.map((id: any) => `${id}: ${getClusterNameById(ClusterId(id))}`);
-
-                nodeDescriptor.push({
-                    nodeId,
-                    deviceTypeList,
-                    serverList,
-                    serverNames,
-                    clientList,
-                    clientNames,
-                    endpointList: partsList,
-                });
+            try {
+                const matterNode = await commissioningController.getNode(node.nodeId);
+                const descriptor = matterNode.getRootClusterClient(DescriptorCluster);
+                if (descriptor) {
+                    const _deviceTypeList = await descriptor.getDeviceTypeListAttribute();
+                    enhancedNode.deviceTypeList = _deviceTypeList.map((item: any) => {
+                        const deviceTypeDefinition = getDeviceTypeDefinitionFromModelByCode(item.deviceType);
+                        return {
+                            deviceType: item.deviceType,
+                            revision: item.revision,
+                            deviceTypeName: deviceTypeDefinition?.name,
+                            deviceClass: deviceTypeDefinition?.deviceClass,
+                        }
+                    });
+                }
+            } catch (error) {
+                // If we can't get device type info, keep empty array
+                console.warn(`Failed to get device type info for node ${node.nodeId}:`, error);
             }
+
+            enhancedNodeDetails.push(enhancedNode);
         }
 
         const result = {
-            summary: "Matter Commissioned Devices status and details",
+            summary: "Matter Commissioned Devices status and basic information",
             nodeList: serializedNodes,
             connectionStatus: connectionStatus,
-            descriptor: nodeDescriptor,
-            details: nodeDetails
+            details: enhancedNodeDetails
         }
 
         return {
@@ -399,7 +415,6 @@ async function handleGetDeviceInfo(args: any) {
 
     try {
         const nodeStructureInfo = getNodeStructureInfo(node);
-        console.log("nodeStructureInfo", nodeStructureInfo);
 
         return {
             content: [
@@ -819,7 +834,7 @@ export const createServer = () => {
                 },
                 {
                     name: ToolName.GET_DEVICE_INFO,
-                    description: 'Get detailed information about a device',
+                    description: 'Get detailed information about the device and its capabilities structure',
                     inputSchema: zodToJsonSchema(GetDeviceInfoSchema)
                 },
                 {
