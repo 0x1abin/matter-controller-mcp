@@ -29,7 +29,7 @@ import { ClusterId, getClusterById, getClusterNameById, resolveAttributeName } f
 import { NodeJsBle } from "@matter/nodejs-ble";
 import { CommissioningController, NodeCommissioningOptions } from "@project-chip/matter.js";
 import { getDeviceTypeDefinitionFromModelByCode } from "@project-chip/matter.js/device";
-import { NodeIdUtils, serializeJson } from './controllerUtils.js';
+import { NodeIdUtils, serializeJson, getNodeStructureInfo } from './controllerUtils.js';
 
 // Configure logger
 const logger = Logger.get("MatterControllerMCP");
@@ -398,110 +398,14 @@ async function handleGetDeviceInfo(args: any) {
     const node = await ensureDeviceConnected(nodeIdString);
 
     try {
-        const info = node.getRootClusterClient(BasicInformationCluster);
-        const descriptor = node.getRootClusterClient(DescriptorCluster);
-        
-        let deviceInfo: any = {
-            nodeId: nodeIdString,
-            basicInformation: {},
-            rootEndpoint: {},
-            endpoints: []
-        };
-
-        // Get basic information from root endpoint
-        if (info) {
-            deviceInfo.basicInformation.productName = await info.getProductNameAttribute();
-            deviceInfo.basicInformation.vendorName = await info.getVendorNameAttribute();
-            deviceInfo.basicInformation.hardwareVersion = await info.getHardwareVersionAttribute();
-            deviceInfo.basicInformation.softwareVersion = await info.getSoftwareVersionAttribute();
-            deviceInfo.basicInformation.vendorId = await info.getVendorIdAttribute();
-            deviceInfo.basicInformation.productId = await info.getProductIdAttribute();
-            deviceInfo.basicInformation.serialNumber = await info.getSerialNumberAttribute();
-        }
-
-        // Get root endpoint descriptor information
-        if (descriptor) {
-            deviceInfo.rootEndpoint.deviceTypeList = await descriptor.getDeviceTypeListAttribute();
-            deviceInfo.rootEndpoint.serverList = await descriptor.getServerListAttribute();
-            deviceInfo.rootEndpoint.clientList = await descriptor.getClientListAttribute();
-            deviceInfo.rootEndpoint.partsList = await descriptor.getPartsListAttribute();
-        }
-
-        // Get all functional endpoints (devices)
-        const devices = node.getDevices();
-        for (const device of devices) {
-            const endpointInfo: any = {
-                endpointId: device.number,
-                deviceTypes: [],
-                clusters: {
-                    servers: [],
-                    clients: []
-                }
-            };
-
-            // Get device types
-            try {
-                const deviceTypes = device.getDeviceTypes();
-                endpointInfo.deviceTypes = deviceTypes.map((dt: any) => ({
-                    code: dt.code,
-                    name: dt.name,
-                    revision: dt.revision
-                }));
-            } catch (error) {
-                logger.debug(`Failed to get device types for endpoint ${device.number}: ${error}`);
-            }
-
-            // Get descriptor information for this endpoint
-            const endpointDescriptor = device.getClusterClient(DescriptorCluster);
-            if (endpointDescriptor) {
-                try {
-                    // Get server list from descriptor
-                    const serverList = await endpointDescriptor.getServerListAttribute();
-                    const clientList = await endpointDescriptor.getClientListAttribute();
-
-                    // Process server clusters - get real cluster names using matter.js API
-                    for (const clusterId of serverList) {
-                        const cluster = getClusterById(clusterId);
-                        endpointInfo.clusters.servers.push({
-                            id: clusterId,
-                            name: cluster.name,
-                            revision: cluster.revision,
-                            features: cluster.features,
-                            attributes: cluster.attributes,
-                            commands: cluster.commands,
-                            events: cluster.events
-                        });
-                    }
-
-                    // Process client clusters - get real cluster names using matter.js API
-                    for (const clusterId of clientList) {
-                        const cluster = getClusterById(clusterId);
-                        endpointInfo.clusters.clients.push({
-                            id: clusterId,
-                            name: cluster.name,
-                            revision: cluster.revision,
-                            features: cluster.features,
-                            attributes: cluster.attributes,
-                            commands: cluster.commands,
-                            events: cluster.events
-                        });
-                    }
-                } catch (error) {
-                    logger.debug(`Failed to get descriptor information for endpoint ${device.number}: ${error}`);
-                }
-            }
-
-            deviceInfo.endpoints.push(endpointInfo);
-        }
-
-        // Convert any BigInt values to strings for JSON serialization
-        const processedDeviceInfo = serializeJson(deviceInfo);
+        const nodeStructureInfo = getNodeStructureInfo(node);
+        console.log("nodeStructureInfo", nodeStructureInfo);
 
         return {
             content: [
                 {
                     type: 'text',
-                    text: `Device ${nodeIdString} detailed information:\n${processedDeviceInfo}`
+                    text: `NodeId ${nodeIdString} device structure information:\n${nodeStructureInfo}`
                 }
             ]
         };
