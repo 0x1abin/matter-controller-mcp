@@ -8,12 +8,11 @@ A powerful Model Context Protocol (MCP) server that provides comprehensive Matte
 
 ## Features
 
-- **🔌 Device Management**: Commission and decommission Matter devices
+- **🔌 Device Management**: Commission and decommission Matter devices with automatic connection
 - **💡 Device Control**: Control lights, switches, and other Matter devices
 - **🎛️ Advanced Controls**: Support for dimming, color control, and color temperature
-- **📡 Real-time Events**: Subscribe to device attribute changes and events
-- **🔍 Device Discovery**: Auto-discover and connect to commissioned devices
-- **📊 Device Information**: Retrieve detailed device information and capabilities
+- **📊 Device Information**: Retrieve detailed device information and capabilities structure
+- **🔧 Attribute Access**: Read and write device cluster attributes directly
 - **🌐 Multiple Transports**: Support for stdio, SSE, and streamable HTTP transports
 - **🔧 Flexible Configuration**: Environment-based configuration options
 
@@ -97,16 +96,16 @@ The server supports various environment variables for configuration:
 
 ```bash
 # Matter controller configuration
-export MATTER_UNIQUE_ID="your-unique-controller-id"
-export MATTER_ADMIN_FABRIC_LABEL="Your Matter Controller"
-export MATTER_LOG_LEVEL="info"  # debug, info, warn, error
+export MATTER_UNIQUE_ID="your-unique-controller-id"          # Controller unique identifier
+export MATTER_ADMIN_FABRIC_LABEL="Your Matter Controller"    # Admin fabric label  
+export MATTER_LOG_LEVEL="info"                               # Log level: debug, info, warn, error
 
 # BLE support (optional)
-export ble="true"
-export ble.hci.id="0"
+export ble="true"        # Enable BLE support
+export ble.hci.id="0"    # BLE HCI interface ID
 
 # Server configuration
-export PORT="3001"  # For HTTP/SSE transports
+export PORT="3001"       # Port for HTTP/SSE transports
 ```
 
 ## Available Tools
@@ -127,9 +126,8 @@ export PORT="3001"  # For HTTP/SSE transports
 
 ### Advanced Features
 
-- **`read_attributes`**: Read device attributes from clusters
-- **`write_attributes`**: Write attributes to device clusters
-- **`subscribe_device_events`**: Subscribe to real-time device events
+- **`read_attributes`**: Read device attributes from clusters (specific attributes or all)
+- **`write_attributes`**: Write attributes to device clusters (supports batch writing)
 
 ## API Examples
 
@@ -151,6 +149,18 @@ export PORT="3001"  # For HTTP/SSE transports
     "ip": "192.168.1.100",
     "port": 5540,
     "setupPin": 20202021
+  }
+}
+
+// Using BLE commissioning with WiFi credentials
+{
+  "name": "commission_device",
+  "arguments": {
+    "ble": true,
+    "setupPin": 20202021,
+    "longDiscriminator": 3840,
+    "wifiSsid": "YourWiFiNetwork",
+    "wifiCredentials": "YourWiFiPassword"
   }
 }
 ```
@@ -176,12 +186,22 @@ export PORT="3001"  # For HTTP/SSE transports
   }
 }
 
-// Set color temperature
+// Set color temperature (warm/cool white)
 {
   "name": "control_color_device",
   "arguments": {
     "nodeId": "1234567890abcdef",
     "colorTemperature": 250
+  }
+}
+
+// Set color (hue and saturation for colored lights)
+{
+  "name": "control_color_device",
+  "arguments": {
+    "nodeId": "1234567890abcdef",
+    "hue": 120,
+    "saturation": 200
   }
 }
 ```
@@ -197,13 +217,37 @@ export PORT="3001"  # For HTTP/SSE transports
   }
 }
 
-// Read attributes
+// Read specific attributes
+{
+  "name": "read_attributes",
+  "arguments": {
+    "nodeId": "1234567890abcdef",
+    "clusterId": 6,  // OnOff cluster
+    "endpointId": 1,
+    "attributeIds": [0]  // OnOff attribute
+  }
+}
+
+// Read all attributes in a cluster
 {
   "name": "read_attributes",
   "arguments": {
     "nodeId": "1234567890abcdef",
     "clusterId": 6,  // OnOff cluster
     "endpointId": 1
+  }
+}
+
+// Write attributes (batch writing supported)
+{
+  "name": "write_attributes",
+  "arguments": {
+    "nodeId": "1234567890abcdef",
+    "clusterId": 6,  // OnOff cluster
+    "endpointId": 1,
+    "attributes": {
+      "0": true  // Set OnOff attribute to true
+    }
   }
 }
 ```
@@ -215,14 +259,14 @@ export PORT="3001"  # For HTTP/SSE transports
 - Node.js 18+ 
 - TypeScript 5.6+
 - Matter.js compatible system
+- BLE support (optional, for BLE commissioning)
 
 ### Build
 
 ```bash
-npm run build      # Build the project
-npm run watch      # Watch mode for development
-npm run start      # Start with stdio transport
-npm run start:sse  # Start with SSE transport
+npm run build                # Build the project (compiles TypeScript)
+npm run start                # Start with stdio transport (default)
+npm run start:sse            # Start with SSE transport
 npm run start:streamableHttp # Start with streamable HTTP transport
 ```
 
@@ -233,11 +277,6 @@ npm run start:streamableHttp # Start with streamable HTTP transport
 - Follow zod schema patterns for tool input validation
 - Prefer async/await over callbacks and Promise chains
 - Use descriptive variable names and proper error handling
-
-### Testing
-
-The server automatically initializes and connects to commissioned devices on startup. You can test device control using any MCP-compatible client.
-
 
 ## Contributing
 
@@ -262,9 +301,11 @@ We welcome contributions! Please follow these steps:
 ### Common Issues
 
 1. **Device not found**: Ensure the device is in pairing mode and on the same network
-2. **Connection timeout**: Check network connectivity and device availability
-3. **Permission errors**: Ensure proper permissions for BLE access (if using BLE)
-4. **Port conflicts**: Change the PORT environment variable if using HTTP transport
+2. **Connection timeout**: Check network connectivity and device availability  
+3. **Permission errors**: Ensure proper permissions for BLE access (if using BLE commissioning)
+4. **Port conflicts**: Change the PORT environment variable if using HTTP/SSE transport
+5. **Controller initialization failed**: Check Matter.js dependencies and system compatibility
+6. **Device commissioning failed**: Verify pairing code/PIN and network connectivity
 
 ### Debug Mode
 
