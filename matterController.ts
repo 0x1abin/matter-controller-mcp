@@ -21,7 +21,7 @@ import {
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
-import { Diagnostic, Environment, Logger, singleton, StorageService, Time, Bytes } from "@matter/main";
+import { Diagnostic, Environment, Logger, singleton, StorageService, Time } from "@matter/main";
 import { BasicInformationCluster, DescriptorCluster, GeneralCommissioning, OnOff, LevelControl, ColorControl } from "@matter/main/clusters";
 import { Ble, ClusterClientObj } from "@matter/main/protocol";
 import { ManualPairingCodeCodec, NodeId } from "@matter/main/types";
@@ -29,6 +29,7 @@ import { ClusterId, getClusterById, getClusterNameById, resolveAttributeName } f
 import { NodeJsBle } from "@matter/nodejs-ble";
 import { CommissioningController, NodeCommissioningOptions } from "@project-chip/matter.js";
 import { getDeviceTypeDefinitionFromModelByCode } from "@project-chip/matter.js/device";
+import { NodeIdUtils, serializeJson } from './controllerUtils.js';
 
 // Configure logger
 const logger = Logger.get("MatterControllerMCP");
@@ -132,89 +133,6 @@ enum ToolName {
     CONTROL_COLOR_DEVICE = 'control_color_device',
     WRITE_ATTRIBUTES = 'write_attributes',
     READ_ATTRIBUTES = 'read_attributes',
-}
-
-function serializeJson(data: any) {
-    return JSON.stringify(data, (key, value) => {
-        if (key === 'nodeId' && typeof value != 'string') {
-            return NodeIdUtils.nodeIdToString(value);
-        }
-        if (typeof value === "bigint") {
-            return value.toString();
-        }
-        if (value instanceof Uint8Array) {
-            return Bytes.toHex(value);
-        }
-        if (value === undefined) {
-            return "undefined";
-        }
-        return value;
-    });
-}
-
-// Unified NodeId encoding/decoding utilities based on NodeId.ts
-namespace NodeIdUtils {
-    /**
-     * Parse hex string to NodeId
-     */
-    export function fromHexString(hexString: string): ReturnType<typeof NodeId> {
-        // Remove '0x' prefix if present
-        const cleanHex = hexString.replace(/^0x/i, '');
-        
-        // Convert hex string to BigInt and create NodeId
-        return NodeId(BigInt('0x' + cleanHex));
-    }
-
-    /**
-     * Convert NodeId to hex string using the standard NodeId.toHexString method
-     */
-    export function toHexString(nodeId: ReturnType<typeof NodeId>): string {
-        return NodeId.toHexString(nodeId);
-    }
-
-    /**
-     * Parse input to NodeId, handling string inputs as hex strings
-     */
-    export function parseNodeId(input: string): ReturnType<typeof NodeId> {
-        if (typeof input === 'string') {
-            // Check if it's a hex string (contains letters A-F)
-            if (/[A-Fa-f]/.test(input)) {
-                return fromHexString(input);
-            } else {
-                // Treat as decimal string
-                return NodeId(BigInt(input));
-            }
-        }
-        throw new Error(`Invalid NodeId input: ${input}`);
-    }
-
-    /**
-     * Convert NodeId to string representation for consistent serialization
-     * Uses decimal string format for compatibility
-     */
-    export function nodeIdToString(nodeId: ReturnType<typeof NodeId>): string {
-        return toHexString(nodeId);
-    }
-
-    /**
-     * Convert NodeId array to string array for serialization
-     */
-    export function serializeNodeIds(nodeIds: ReturnType<typeof NodeId>[]): string[] {
-        return nodeIds.map(nodeId => nodeIdToString(nodeId));
-    }
-
-    /**
-     * Validate and normalize NodeId input from MCP protocol
-     * Always returns decimal string format
-     */
-    export function validateAndNormalizeNodeId(input: string): string {
-        try {
-            const nodeId = parseNodeId(input);
-            return nodeIdToString(nodeId);
-        } catch (error) {
-            throw new Error(`Invalid NodeId format: ${input}`);
-        }
-    }
 }
 
 // Initialize the Matter controller
@@ -358,7 +276,7 @@ async function handleCommissionDevice(args: any) {
         const nodeId = await commissioningController.commissionNode(options);
         
         // Automatically connect to newly commissioned device
-        const nodeIdString = NodeIdUtils.nodeIdToString(nodeId);
+        const nodeIdString = NodeId.toHexString(nodeId);
         await ensureDeviceConnected(nodeIdString);
 
         return {
@@ -395,7 +313,7 @@ async function handleGetCommissionedDevices(args: any) {
             nodeDetails = nodeDetails.find((node: any) => node.nodeId === requestedNodeId);
         }
 
-        const serializedNodes = NodeIdUtils.serializeNodeIds(nodes);
+        const serializedNodes = nodes.map((nodeId: NodeId) => NodeId.toHexString(nodeId));
 
         // Add connection status to the details
         const connectionStatus: any[] = [];
@@ -771,12 +689,12 @@ async function handleDecommissionDevice(args: any) {
 
     try {
         const nodeId = NodeIdUtils.parseNodeId(validatedArgs.nodeId);
-        const nodeIdString = NodeIdUtils.nodeIdToString(nodeId);
+        const nodeIdString = NodeId.toHexString(nodeId);
         
         // Check if the node is commissioned
         const commissionedNodes = commissioningController.getCommissionedNodes();
         const nodeExists = commissionedNodes.some(commissionedNodeId => 
-            NodeIdUtils.nodeIdToString(commissionedNodeId) === nodeIdString
+            NodeId.toHexString(commissionedNodeId) === nodeIdString
         );
         
         if (!nodeExists) {
