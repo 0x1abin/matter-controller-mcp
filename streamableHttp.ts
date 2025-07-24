@@ -11,7 +11,7 @@ const app = express();
 const transports: Map<string, StreamableHTTPServerTransport> = new Map<string, StreamableHTTPServerTransport>();
 
 app.post('/mcp', async (req: Request, res: Response) => {
-  console.error('Received MCP POST request');
+  console.debug('Received MCP POST request');
   try {
     // Check for existing session ID
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
@@ -88,7 +88,7 @@ app.post('/mcp', async (req: Request, res: Response) => {
 
 // Handle GET requests for SSE streams (using built-in support from StreamableHTTP)
 app.get('/mcp', async (req: Request, res: Response) => {
-  console.error('Received MCP GET request');
+  console.debug('Received MCP GET request:', req.body);
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
   if (!sessionId || !transports.has(sessionId)) {
     res.status(400).json({
