@@ -30,6 +30,35 @@ import { NodeJsBle } from "@matter/nodejs-ble";
 import { CommissioningController, NodeCommissioningOptions } from "@project-chip/matter.js";
 import { getDeviceTypeDefinitionFromModelByCode } from "@project-chip/matter.js/device";
 
+// Configure logger
+const logger = Logger.get("MatterControllerMCP");
+Logger.level = process.env.MATTER_LOG_LEVEL || 'info';
+
+// Global variables for the MCP server instance
+let commissioningController: CommissioningController | null = null;
+
+const environment = Environment.default;
+const storageService = environment.get(StorageService);
+const controllerStorage = (await storageService.open("controller")).createContext("data");
+const uniqueId = (await controllerStorage.has("uniqueid"))
+    ? await controllerStorage.get<string>("uniqueid")
+    : (environment.vars.string("uniqueid") ?? Time.nowMs().toString());
+await controllerStorage.set("uniqueid", uniqueId);
+const adminFabricLabel = (await controllerStorage.has("fabriclabel"))
+    ? await controllerStorage.get<string>("fabriclabel")
+    : (environment.vars.string("fabriclabel") ?? "MatterControllerMCP");
+await controllerStorage.set("fabriclabel", adminFabricLabel);
+
+// Initialize BLE if enabled
+if (environment.vars.get("ble")) {
+    Ble.get = singleton(
+        () =>
+            new NodeJsBle({
+                environment: environment,
+                hciId: environment.vars.number("ble.hci.id"),
+            }),
+    );
+}
 
 // Tool input schemas
 const GetControllerStatusSchema = z.object({});
@@ -103,31 +132,6 @@ enum ToolName {
     CONTROL_COLOR_DEVICE = 'control_color_device',
     WRITE_ATTRIBUTES = 'write_attributes',
     READ_ATTRIBUTES = 'read_attributes',
-}
-
-// Global variables for the MCP server instance
-let logger: Logger;
-let environment: Environment;
-let storageService: StorageService;
-let commissioningController: CommissioningController | null = null;
-let controllerUniqueId: string = '';
-let adminFabricLabel: string = '';
-
-// Configure logging
-function configureLogging() {
-    try {
-        const logLevel = process.env.MATTER_LOG_LEVEL || 'info';
-        
-        // Configure the logger format
-        Logger.defaultLogLevel = logLevel as any;
-        Logger.log = (level: any, formattedLog: string) => {
-            // Use console.error for logging to avoid interfering with responses
-            console.error(`[${level}] ${formattedLog}`);
-        };
-        
-    } catch (error) {
-        console.error('Failed to configure logging:', error);
-    }
 }
 
 function serializeJson(data: any) {
@@ -213,26 +217,15 @@ namespace NodeIdUtils {
     }
 }
 
-// Auto-initialize the Matter controller
-async function autoInitializeController() {
+// Initialize the Matter controller
+async function initializeController() {
     try {
-        logger.info('Auto-initializing Matter controller with default parameters...');
-        
-        const controllerStorage = (await storageService.open("controller")).createContext("data");
-        
-        // Use environment variables or generate defaults
-        controllerUniqueId = process.env.MATTER_UNIQUE_ID || 
-            (await controllerStorage.has("uniqueid") ? await controllerStorage.get<string>("uniqueid") : Time.nowMs().toString());
-        await controllerStorage.set("uniqueid", controllerUniqueId);
-        
-        adminFabricLabel = process.env.MATTER_ADMIN_FABRIC_LABEL || 
-            (await controllerStorage.has("fabriclabel") ? await controllerStorage.get<string>("fabriclabel") : "Matter Controller MCP");
-        await controllerStorage.set("fabriclabel", adminFabricLabel);
+        logger.info('Initializing Matter controller...');
 
         commissioningController = new CommissioningController({
             environment: {
                 environment: environment,
-                id: controllerUniqueId,
+                id: uniqueId,
             },
             autoConnect: true,
             adminFabricLabel: adminFabricLabel,
@@ -240,38 +233,12 @@ async function autoInitializeController() {
 
         await commissioningController.start();
         
-        logger.info(`Matter Controller auto-initialized successfully with ID: ${controllerUniqueId}`);
+        logger.info(`Matter Controller initialized successfully with ID: ${uniqueId}`);
         
     } catch (error) {
-        logger.error('Failed to auto-initialize Matter controller:', error);
+        logger.error('Failed to initialize Matter controller:', error);
         throw error;
     }
-}
-
-// Setup the Matter controller and environment
-async function setupMatterEnvironment() {
-    // Initialize configuration manager (removed since it was causing linter errors)
-    
-    // Configure logging
-    configureLogging();
-    
-    logger = Logger.get("MatterControllerMCP");
-    environment = Environment.default;
-    storageService = environment.get(StorageService);
-    
-    // Initialize BLE if enabled
-    if (environment.vars.get("ble")) {
-        Ble.get = singleton(
-            () =>
-                new NodeJsBle({
-                    environment: environment,
-                    hciId: environment.vars.number("ble.hci.id"),
-                }),
-        );
-    }
-
-    // Auto-initialize the Matter controller
-    await autoInitializeController();
 }
 
 // Helper function to ensure device is connected before operation
@@ -333,7 +300,7 @@ async function handleGetControllerStatus(args: any) {
             {
                 type: 'text',
                 text: JSON.stringify({
-                    uniqueId: controllerUniqueId || 'not set',
+                    uniqueId: uniqueId || 'not set',
                     adminFabricLabel: adminFabricLabel || 'not set',
                     commissioning: commissioningController !== null,
                     commissionedDevices: commissioningController?.getCommissionedNodes().length || 0,
@@ -1139,7 +1106,7 @@ export const createServer = () => {
         }
     };
 
-    setupMatterEnvironment();
+    initializeController();
 
     console.log('Matter controller created');
 
