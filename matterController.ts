@@ -29,7 +29,7 @@ import { ClusterId, getClusterById, getClusterNameById, resolveAttributeName } f
 import { NodeJsBle } from "@matter/nodejs-ble";
 import { CommissioningController, NodeCommissioningOptions } from "@project-chip/matter.js";
 import { getDeviceTypeDefinitionFromModelByCode } from "@project-chip/matter.js/device";
-import { NodeIdUtils, serializeJson, getNodeStructureInfo } from './controllerUtils.js';
+import { NodeIdUtils, serializeJson, getNodeStructureInfo, findAllDevices, findDeviceByEndpoint } from './controllerUtils.js';
 
 // Configure logger
 const logger = Logger.get("MatterControllerMCP");
@@ -437,14 +437,18 @@ async function handleControlOnOffDevice(args: any) {
     const node = await ensureDeviceConnected(nodeIdString);
 
     try {
-        const devices = node.getDevices();
-        const device = devices.find((d: any) => d.number === validatedArgs.endpointId);
-
+        const device = findDeviceByEndpoint(node, validatedArgs.endpointId);
         if (!device) {
-            throw new McpError(ErrorCode.InvalidRequest, `Endpoint ${validatedArgs.endpointId} not found`);
+            // If not found, list all available devices for better error message
+            const allDevices = findAllDevices(node);
+            const availableEndpoints = allDevices.map(d => d.endpoint).join(', ');
+            throw new McpError(
+                ErrorCode.InvalidRequest, 
+                `Endpoint ${validatedArgs.endpointId} not found. Available endpoints: ${availableEndpoints || 'none'}`
+            );
         }
 
-        const onOff: ClusterClientObj<OnOff.Complete> | undefined = device.getClusterClient(OnOff.Complete);
+        const onOff = device.getClusterClient(OnOff.Complete)
         if (!onOff) {
             throw new McpError(ErrorCode.InvalidRequest, `OnOff cluster not available on device ${nodeIdString}`);
         }

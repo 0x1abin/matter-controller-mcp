@@ -84,3 +84,69 @@ export function serializeJson(data: any) {
         return value;
     });
 }
+
+/**
+ * Recursively find all devices in a node, including nested child endpoints (aggregator pattern)
+ */
+export function findAllDevices(node: any): Array<{ endpoint: number; device: any; path: string }> {
+    const allDevices: Array<{ endpoint: number; device: any; path: string }> = [];
+    
+    function traverseDevices(devices: any[], parentPath: string = '') {
+        for (const device of devices) {
+            const currentPath = parentPath + `endpoint-${device.number}`;
+            allDevices.push({
+                endpoint: device.number,
+                device: device,
+                path: currentPath
+            });
+            
+            // Check for child endpoints (aggregator pattern)
+            if (device.childEndpoints && Array.isArray(device.childEndpoints)) {
+                traverseDevices(device.childEndpoints, currentPath + '/');
+            }
+        }
+    }
+    
+    try {
+        const devices = node.getDevices();
+        traverseDevices(devices);
+    } catch (error) {
+        console.warn('Failed to traverse devices:', error);
+    }
+    
+    return allDevices;
+}
+
+/**
+ * Find a device by endpoint ID, supporting nested child endpoints
+ */
+export function findDeviceByEndpoint(node: any, targetEndpointId: number): any | null {
+    const allDevices = findAllDevices(node);
+    const found = allDevices.find(item => item.endpoint === targetEndpointId);
+    return found ? found.device : null;
+}
+
+/**
+ * Check if a device is a bridge/aggregator device
+ */
+export function isBridgeDevice(device: any): boolean {
+    try {
+        // Check device type for aggregator pattern
+        const deviceType = device.deviceType;
+        
+        // Common aggregator device types
+        const aggregatorTypes = [
+            0x000E, // Aggregator
+            0x0013, // Bridge
+        ];
+        
+        if (aggregatorTypes.includes(deviceType)) {
+            return true;
+        }
+        
+        // Check if device has child endpoints
+        return device.childEndpoints && Array.isArray(device.childEndpoints) && device.childEndpoints.length > 0;
+    } catch (error) {
+        return false;
+    }
+}
