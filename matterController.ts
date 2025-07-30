@@ -37,6 +37,7 @@ Logger.level = process.env.MATTER_LOG_LEVEL || 'info';
 
 // Global variables for the MCP server instance
 let commissioningController: CommissioningController | null = null;
+let initializationPromise: Promise<void> | null = null;
 
 const environment = Environment.default;
 const storageService = environment.get(StorageService);
@@ -135,7 +136,34 @@ enum ToolName {
     READ_ATTRIBUTES = 'read_attributes',
 }
 
-// Initialize the Matter controller
+// Initialize the Matter controller with lazy loading
+async function ensureControllerInitialized(): Promise<void> {
+    if (commissioningController) {
+        return; // Already initialized
+    }
+    
+    if (initializationPromise) {
+        // Initialization is in progress, wait for it
+        logger.info('Controller initialization already in progress, waiting...');
+        await initializationPromise;
+        return;
+    }
+    
+    // Start initialization
+    logger.info('Starting Matter controller lazy initialization...');
+    initializationPromise = initializeController();
+    
+    try {
+        await initializationPromise;
+        logger.info('Matter controller lazy initialization completed successfully');
+    } catch (error) {
+        logger.error('Matter controller lazy initialization failed:', error);
+        throw error;
+    } finally {
+        initializationPromise = null;
+    }
+}
+
 async function initializeController() {
     try {
         logger.info('Initializing Matter controller...');
@@ -869,6 +897,7 @@ export const createServer = () => {
         const { name, arguments: args } = request.params;
 
         try {
+            await ensureControllerInitialized();
             switch (name) {
                 case ToolName.GET_CONTROLLER_STATUS:
                     return await handleGetControllerStatus(args);
@@ -936,8 +965,6 @@ export const createServer = () => {
             }
         }
     };
-
-    initializeController();
 
     console.log('Matter controller created');
 
