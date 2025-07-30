@@ -50,11 +50,11 @@ export namespace NodeIdUtils {
  * 
  * @param node - The PairedNode instance
  * @param format - The format to use: 'plain' for plain text, 'ansi' for colored text
- * @returns A formatted string representation of the node structure
+ * @returns A formatted string representation of the node structure with duplicate attributes filtered
  * 
  * Usage examples:
- * - const plainStructure = getNodeStructureString(node);
- * - const coloredStructure = getNodeStructureString(node, 'ansi');
+ * - const plainStructure = getNodeStructureInfo(node);
+ * - const coloredStructure = getNodeStructureInfo(node, 'ansi');
  */
 export function getNodeStructureInfo(node: any, format: 'plain' | 'ansi' = 'plain'): string {
     // Choose formatter based on the format parameter
@@ -64,7 +64,70 @@ export function getNodeStructureInfo(node: any, format: 'plain' | 'ansi' = 'plai
     const diagnosticValue = node[Diagnostic.value];
     
     // Format it as a string with no indentation
-    return formatter(diagnosticValue, 0);
+    const rawStructure = formatter(diagnosticValue, 0);
+    
+    // Filter duplicate attributes and return
+    return filterDuplicateAttributes(rawStructure);
+}
+
+/**
+ * Filter duplicate attributes from the structure string
+ * This function removes repeated attribute entries within each cluster's attributes section
+ */
+function filterDuplicateAttributes(structureString: string): string {
+    const lines = structureString.split('\n');
+    const filteredLines: string[] = [];
+    let inAttributesSection = false;
+    let currentClusterAttributes = new Set<string>();
+    let attributesSectionStartIndex = -1;
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmedLine = line.trim();
+        
+        // Check if we're entering an attributes section
+        if (trimmedLine === 'attributes') {
+            inAttributesSection = true;
+            currentClusterAttributes.clear();
+            attributesSectionStartIndex = filteredLines.length;
+            filteredLines.push(line);
+            continue;
+        }
+        
+        // Check if we're leaving an attributes section
+        if (inAttributesSection && (
+            trimmedLine === 'commands' || 
+            trimmedLine === 'events' || 
+            trimmedLine.startsWith('clients') ||
+            trimmedLine.startsWith('childs') ||
+            (trimmedLine.includes('endpoint#:') && trimmedLine.includes('type:')) ||
+            (line.length > 0 && !line.startsWith('  ') && !line.startsWith('\t'))
+        )) {
+            inAttributesSection = false;
+            currentClusterAttributes.clear();
+        }
+        
+        // If we're in attributes section, check for duplicates
+        if (inAttributesSection && trimmedLine.includes(' id: 0x')) {
+            // Extract attribute name and ID
+            const attributeMatch = trimmedLine.match(/^(\w+)\s+id:\s+(0x[a-fA-F0-9]+)/);
+            if (attributeMatch) {
+                const attributeName = attributeMatch[1];
+                const attributeId = attributeMatch[2];
+                const attributeKey = `${attributeName}_${attributeId}`;
+                
+                // Skip if we've already seen this attribute in this cluster
+                if (currentClusterAttributes.has(attributeKey)) {
+                    continue;
+                }
+                currentClusterAttributes.add(attributeKey);
+            }
+        }
+        
+        filteredLines.push(line);
+    }
+    
+    return filteredLines.join('\n');
 }
 
 export function serializeJson(data: any) {
