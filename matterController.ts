@@ -122,6 +122,10 @@ const WriteAttributesSchema = z.object({
     attributes: z.record(z.string(), z.any()).describe('Attributes to write as key-value pairs (key is attribute ID as string, value is the attribute value)')
 });
 
+const ResetControllerSchema = z.object({
+    confirm: z.boolean().default(false).describe('Confirmation flag to prevent accidental reset')
+});
+
 // Tool names enum
 enum ToolName {
     GET_CONTROLLER_STATUS = 'get_controller_status',
@@ -134,6 +138,7 @@ enum ToolName {
     CONTROL_COLOR_DEVICE = 'control_color_device',
     WRITE_ATTRIBUTES = 'write_attributes',
     READ_ATTRIBUTES = 'read_attributes',
+    RESET_CONTROLLER = 'reset_controller',
 }
 
 // Initialize the Matter controller with lazy loading
@@ -819,6 +824,60 @@ async function handleReadAttributes(args: any) {
     }
 }
 
+async function handleResetController(args: any) {
+    const validatedArgs = ResetControllerSchema.parse(args);
+    
+    if (!validatedArgs.confirm) {
+        throw new McpError(ErrorCode.InvalidRequest, "Reset operation requires confirmation. Set 'confirm' to true to proceed.");
+    }
+
+    try {
+        logger.info('Starting controller reset process...');
+        
+        // Close existing controller and connections if they exist
+        if (commissioningController) {
+            try {
+                logger.info('Closing existing controller connections...');
+                const nodes = commissioningController.getCommissionedNodes();
+                for (const nodeId of nodes) {
+                    try {
+                        const node = await commissioningController.getNode(nodeId);
+                        if (node.isConnected) {
+                            await commissioningController.removeNode(nodeId);
+                        }
+                    } catch (error) {
+                        logger.warn(`Error disconnecting from node ${nodeId}:`, error);
+                    }
+                }
+                
+                await commissioningController.resetStorage();
+                await commissioningController.close();
+                logger.info('Controller closed successfully');
+            } catch (error) {
+                logger.warn('Error closing existing controller:', error);
+            }
+        }
+        
+        // Reset global variables
+        commissioningController = null;
+        initializationPromise = null;
+
+        logger.info('Controller reset completed successfully');
+        
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text: 'Matter controller has been reset successfully. All storage data and connections have been cleared. The controller will be re-initialized on the next operation.'
+                }
+            ]
+        };
+    } catch (error) {
+        logger.error('Failed to reset controller:', error);
+        throw new McpError(ErrorCode.InternalError, `Failed to reset controller: ${error}`);
+    }
+}
+
 // Main createServer function
 export const createServer = () => {
 
@@ -888,6 +947,11 @@ export const createServer = () => {
                     name: ToolName.READ_ATTRIBUTES,
                     description: 'Read attributes from a device cluster (can read specific attributes or all attributes in a cluster)',
                     inputSchema: zodToJsonSchema(ReadAttributesSchema)
+                },
+                {
+                    name: ToolName.RESET_CONTROLLER,
+                    description: 'Reset the Matter controller and clear all storage data (requires confirmation)',
+                    inputSchema: zodToJsonSchema(ResetControllerSchema)
                 }
             ] as Tool[]
         };
@@ -919,6 +983,8 @@ export const createServer = () => {
                     return await handleWriteAttributes(args);
                 case ToolName.READ_ATTRIBUTES:
                     return await handleReadAttributes(args);
+                case ToolName.RESET_CONTROLLER:
+                    return await handleResetController(args);
                 default:
                     throw new McpError(
                         ErrorCode.MethodNotFound,
