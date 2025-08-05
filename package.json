@@ -1,6 +1,6 @@
 {
   "name": "matter-controller-mcp",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "An MCP server for Matter Controller, enabling AI agents to control and interact with Matter devices.",
   "license": "MIT",
   "author": {
